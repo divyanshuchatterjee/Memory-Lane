@@ -1,0 +1,572 @@
+The issue happens because the `side` layout parameter (`left` or `right`) is saved as static data inside Firebase whenever a new stop is created. When a stop in the middle is deleted, the remaining items keep their original `side` properties, creating situations where two "left" or two "right" cards end up next to each other.
+
+To fix this, we should **decouple the side logic from Firebase**. Instead of saving `stop.side` to the database, we can determine the side dynamically in the frontend loop as the stops are rendered. This ensures that no matter how many sections you delete or insert, they will **always perfectly alternate**.
+
+Here is the fully corrected, updated file:
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Our Trail — A Scrolling Journey</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght=500;600;700;800&family=Quicksand:wght=400;500;600;700&family=Caveat:wght=500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --sky-top:#BFE6F5;
+    --sky-bottom:#EAF7E9;
+    --trail:#E3A857;
+    --trail-dark:#B87C33;
+    --forest:#2F5233;
+    --leaf:#5B9A5B;
+    --coral:#F2935C;
+    --coral-dark:#D97A45;
+    --cream:#FBF6EA;
+    --ink:#24312A;
+    --paper-shadow: 0 14px 30px -12px rgba(36,49,42,0.35);
+  }
+
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    margin:0;
+    font-family:'Quicksand',sans-serif;
+    color:var(--ink);
+    background:linear-gradient(180deg,var(--sky-top) 0%, var(--sky-bottom) 55%, #F3EBD8 100%);
+    overflow-x:hidden;
+  }
+
+  h1,h2,h3{font-family:'Baloo 2',cursive; margin:0;}
+  .hand{font-family:'Caveat',cursive;}
+
+  @media (prefers-reduced-motion: reduce){
+    *{animation-duration:0.01ms !important; animation-iteration-count:1 !important; transition-duration:0.01ms !important;}
+  }
+
+  /* ---------- Drifting clouds background ---------- */
+  .cloud-layer{
+    position:fixed; inset:0; z-index:0; pointer-events:none; overflow:hidden;
+  }
+  .cloud{
+    position:absolute; opacity:.75; filter:drop-shadow(0 4px 6px rgba(0,0,0,.05));
+    animation:drift linear infinite;
+  }
+  .cloud svg{width:100%; height:100%; display:block;}
+  @keyframes drift{
+    from{transform:translateX(-10vw);}
+    to{transform:translateX(110vw);}
+  }
+
+  /* ---------- Hero ---------- */
+  .hero{
+    position:relative; z-index:2;
+    min-height:92vh;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    text-align:center; padding:6vh 6vw;
+  }
+  .hero .eyebrow{
+    font-family:'Caveat',cursive; font-size:1.6rem; color:var(--coral-dark);
+    margin-bottom:.25rem;
+  }
+  .hero h1{
+    font-size:clamp(2.6rem,7vw,5.2rem);
+    color:var(--forest);
+    line-height:1.02;
+    letter-spacing:-1px;
+  }
+  .hero h1 span{color:var(--coral);}
+  .hero p{
+    max-width:520px; margin:1.2rem auto 0; font-size:1.15rem; color:#3d5041; font-weight:500;
+  }
+  .scroll-cue{
+    margin-top:3rem; font-family:'Caveat',cursive; font-size:1.3rem; color:var(--forest);
+    display:flex; flex-direction:column; align-items:center; gap:.3rem;
+  }
+  .scroll-cue .arrow{
+    width:14px; height:14px; border-right:3px solid var(--forest); border-bottom:3px solid var(--forest);
+    transform:rotate(45deg); animation:bob 1.6s ease-in-out infinite;
+  }
+  @keyframes bob{
+    0%,100%{transform:rotate(45deg) translateY(0);}
+    50%{transform:rotate(45deg) translateY(8px);}
+  }
+
+  /* ---------- Journey wrapper ---------- */
+  .journey{
+    position:relative; z-index:2;
+    max-width:1100px; margin:0 auto;
+    padding:0 6vw 4vh;
+  }
+  .trail-svg{
+    position:absolute; top:0; left:0; width:100%; height:100%;
+    z-index:0; pointer-events:none;
+  }
+  #trailPath{
+    fill:none;
+    stroke:var(--trail);
+    stroke-width:14;
+    stroke-linecap:round;
+    stroke-dasharray:2 26;
+  }
+  #trailPathShadow{
+    fill:none;
+    stroke:var(--trail-dark);
+    stroke-width:14;
+    stroke-linecap:round;
+    stroke-dasharray:2 26;
+    opacity:.35;
+    transform:translate(3px,5px);
+  }
+
+  .fox{
+    position:absolute; z-index:4; width:78px; height:70px;
+    left:0; top:0;
+    transform:translate(-42%,-62%);
+    will-change:left, top, transform;
+  }
+  .fox svg{width:100%; height:100%; overflow:visible;}
+  .fox .bounce{animation:foxbob .6s ease-in-out infinite;}
+  @keyframes foxbob{
+    0%,100%{transform:translateY(0);}
+    50%{transform:translateY(-5px);}
+  }
+
+  /* ---------- Stops ---------- */
+  .stop{
+    position:relative; z-index:2;
+    min-height:78vh;
+    display:flex; align-items:center;
+    padding:6vh 0;
+  }
+  .stop-left{justify-content:flex-start;}
+  .stop-right{justify-content:flex-end;}
+
+  .stop-card{
+    position:relative;
+    width:min(46%, 460px);
+    background:var(--cream);
+    border-radius:22px;
+    padding:2rem 2rem 1.7rem;
+    box-shadow:var(--paper-shadow);
+    border:1px solid rgba(47,82,51,0.08);
+    opacity:0; transform:translateY(28px);
+    transition:opacity .7s ease, transform .7s ease;
+  }
+  .stop.visible .stop-card{opacity:1; transform:translateY(0);}
+
+  .stop-header-row{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:.15rem;
+  }
+
+  .stop-number{
+    font-family:'Caveat',cursive; font-size:1.1rem; color:var(--leaf); font-weight:700;
+  }
+
+  .delete-stop-btn{
+    background:none;
+    border:none;
+    font-size:0.9rem;
+    cursor:pointer;
+    opacity:0.4;
+    transition:opacity 0.2s ease, transform 0.2s ease;
+    padding:4px;
+  }
+  .delete-stop-btn:hover{
+    opacity:1;
+    transform:scale(1.15);
+  }
+
+  .stop-card h2{font-size:1.7rem; color:var(--forest); margin:0 0 .6rem;}
+  .stop-card p{font-size:.98rem; line-height:1.55; color:#41564a; margin:0 0 1.1rem;}
+
+  .photo-grid{
+    display:grid; grid-template-columns:1fr 1fr; gap:.7rem;
+  }
+  .photo{
+    aspect-ratio:1/1; border-radius:10px; position:relative;
+    display:flex; align-items:flex-end; padding:.5rem;
+    background-size:cover; background-position:center;
+    box-shadow:0 6px 14px -6px rgba(36,49,42,.35);
+    transform:rotate(var(--r,0deg));
+    transition:transform .25s ease;
+  }
+  .photo:hover{transform:rotate(0deg) scale(1.04);}
+  .photo:nth-child(1){--r:-3deg; background:linear-gradient(135deg,#F2C288,#F2935C);}
+  .photo:nth-child(2){--r:2deg; background:linear-gradient(135deg,#9FD8B0,#5B9A5B);}
+  .photo:nth-child(3){--r:2.5deg; background:linear-gradient(135deg,#A9D8E6,#6FB3CE);}
+  .photo:nth-child(4){--r:-2deg; background:linear-gradient(135deg,#E7B7D8,#C77BAE);}
+  .photo-cap{
+    font-family:'Caveat',cursive; font-weight:600; font-size:.85rem; color:#fff;
+    background:rgba(0,0,0,.22); padding:2px 6px; border-radius:6px;
+  }
+  .photo-real{padding:0; overflow:hidden; background:#EFE6D0; aspect-ratio:auto; align-items:flex-end;}
+  .photo-real img{
+    width:100%; height:auto; display:block; border-radius:10px;
+  }
+  .photo-real .photo-cap{position:absolute; left:.5rem; bottom:.5rem;}
+
+  .photo-icon{
+    position:absolute; top:.5rem; right:.5rem; font-size:1.1rem; opacity:.85;
+  }
+
+  /* ---------- Footer ---------- */
+  .journey-end{
+    position:relative; z-index:2; text-align:center; padding:8vh 6vw 10vh;
+  }
+  .journey-end h2{font-size:2.2rem; color:var(--forest);}
+  .journey-end p{max-width:460px; margin:.8rem auto 0; color:#3d5041; font-weight:500;}
+
+  .add-stop-wrap{
+    position:relative; z-index:6;
+    display:flex; flex-direction:column; align-items:center; gap:.6rem;
+    padding:2vh 0 4vh; text-align:center;
+  }
+  .add-stop-wrap-top{
+    padding:0 0 5vh;
+  }
+  .add-stop-btn{
+    font-family:'Baloo 2',cursive; font-size:1.05rem; font-weight:600;
+    color:#fff; background:var(--coral);
+    border:none; border-radius:999px; padding:.85rem 1.7rem;
+    cursor:pointer; box-shadow:var(--paper-shadow);
+    transition:transform .2s ease, background .2s ease;
+  }
+  .add-stop-btn:hover{background:var(--coral-dark); transform:translateY(-2px);}
+  .add-stop-btn:active{transform:translateY(0);}
+
+  [contenteditable="true"]{outline:none; border-radius:6px;}
+  [contenteditable="true"]:hover{background:rgba(232,184,75,.18);}
+  [contenteditable="true"]:focus{background:rgba(232,184,75,.28); box-shadow:0 0 0 2px var(--trail-dark);}
+  .photo{cursor:pointer;}
+  .photo:hover{outline:2px dashed var(--trail-dark); outline-offset:2px;}
+
+  @media (max-width:720px){
+    .stop-left,.stop-right{justify-content:center;}
+    .stop-card{width:88%;}
+    .fox{width:58px; height:52px;}
+  }
+</style>
+</head>
+<body>
+
+<div class="cloud-layer">
+  <div class="cloud" style="top:8%; width:140px; height:70px; animation-duration:70s;">
+    <svg viewBox="0 0 140 70"><ellipse cx="40" cy="45" rx="35" ry="22" fill="#fff"/><ellipse cx="80" cy="35" rx="42" ry="28" fill="#fff"/><ellipse cx="110" cy="48" rx="28" ry="18" fill="#fff"/></svg>
+  </div>
+  <div class="cloud" style="top:22%; width:100px; height:50px; animation-duration:95s; animation-delay:-20s;">
+    <svg viewBox="0 0 140 70"><ellipse cx="40" cy="45" rx="35" ry="22" fill="#fff"/><ellipse cx="80" cy="35" rx="42" ry="28" fill="#fff"/><ellipse cx="110" cy="48" rx="28" ry="18" fill="#fff"/></svg>
+  </div>
+  <div class="cloud" style="top:4%; width:170px; height:85px; animation-duration:120s; animation-delay:-50s;">
+    <svg viewBox="0 0 140 70"><ellipse cx="40" cy="45" rx="35" ry="22" fill="#fff"/><ellipse cx="80" cy="35" rx="42" ry="28" fill="#fff"/><ellipse cx="110" cy="48" rx="28" ry="18" fill="#fff"/></svg>
+  </div>
+</div>
+
+<header class="hero">
+  <div class="eyebrow">a little walk through memory lane</div>
+  <h1>Follow the <span>Trail</span></h1>
+  <p>Scroll down to wander the path. A small fox will lead the way, and every so often you'll stumble on a resting spot filled with photos from the trip.</p>
+  <div class="scroll-cue">keep scrolling<div class="arrow"></div></div>
+</header>
+
+<main class="journey" id="journey">
+  <div class="add-stop-wrap add-stop-wrap-top">
+    <button id="addStopBtn" class="add-stop-btn" type="button">＋ Add another stop to the trail</button>
+  </div>
+
+  <svg class="trail-svg" viewBox="0 0 1000 600" preserveAspectRatio="none">
+    <path id="trailPathShadow" d="M500,0 C 500,300 500,300 500,300"/>
+    <path id="trailPath" d="M500,0 C 500,300 500,300 500,300"/>
+  </svg>
+
+  <div class="fox" id="fox">
+    <div class="bounce">
+      <svg viewBox="0 0 110 100">
+        <ellipse cx="45" cy="86" rx="34" ry="6" fill="rgba(36,49,42,.15)"/>
+        <ellipse cx="20" cy="72" rx="7" ry="5" fill="#24312A"/>
+        <ellipse cx="58" cy="72" rx="7" ry="5" fill="#24312A"/>
+        <ellipse cx="40" cy="56" rx="27" ry="25" fill="#FDFDFB" stroke="#24312A" stroke-width="2"/>
+        <circle cx="21" cy="30" r="10" fill="#24312A"/>
+        <circle cx="59" cy="30" r="10" fill="#24312A"/>
+        <ellipse cx="29" cy="50" rx="8.5" ry="10.5" fill="#24312A" transform="rotate(-12 29 50)"/>
+        <ellipse cx="51" cy="50" rx="8.5" ry="10.5" fill="#24312A" transform="rotate(12 51 50)"/>
+        <circle cx="29" cy="52" r="2.6" fill="#fff"/>
+        <circle cx="51" cy="52" r="2.6" fill="#fff"/>
+        <ellipse cx="40" cy="62" rx="3.2" ry="2.4" fill="#24312A"/>
+        <path d="M35 66 Q40 70 45 66" stroke="#24312A" stroke-width="2" fill="none" stroke-linecap="round"/>
+        <ellipse cx="8" cy="58" rx="6" ry="8" fill="#24312A" transform="rotate(-20 8 58)"/>
+        <ellipse cx="72" cy="58" rx="6" ry="8" fill="#24312A" transform="rotate(20 72 58)"/>
+        <ellipse cx="90" cy="80" rx="12" ry="4" fill="rgba(36,49,42,.12)"/>
+        <circle cx="90" cy="66" r="14" fill="#F7D154" stroke="#24312A" stroke-width="1.6"/>
+        <path d="M90 52 Q84 44 78 48 Q84 50 86 56 Z" fill="#F7D154" stroke="#24312A" stroke-width="1.4"/>
+        <circle cx="94" cy="63" r="1.8" fill="#24312A"/>
+        <path d="M100 66 L107 68 L100 70 Z" fill="#E8823D" stroke="#24312A" stroke-width="1.2" stroke-linejoin="round"/>
+        <path d="M84 76 L81 81 M96 76 L99 81" stroke="#E8823D" stroke-width="2.2" stroke-linecap="round"/>
+      </svg>
+    </div>
+  </div>
+
+  <!-- STOPS WILL DYNAMICALLY INJECT HERE FROM FIREBASE -->
+  <div id="stopsContainer"></div>
+</main>
+
+<footer class="journey-end">
+  <h2>End of the trail 🏕️</h2>
+  <p>That's the whole walk — thanks for scrolling along.</p>
+</footer>
+
+<!-- Firebase Modular SDKs -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+  import { getDatabase, ref, set, onValue, update, remove } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyDaf7SJRlQZkSm_kgDff6hiQVRwtyrJ07c",
+    authDomain: "memory-lane-e2697.firebaseapp.com",
+    projectId: "memory-lane-e2697",
+    storageBucket: "memory-lane-e2697.firebasestorage.app",
+    messagingSenderId: "3670400801",
+    appId: "1:3670400801:web:05dacbedbe48b3a26c6860",
+    measurementId: "G-VM6BN8LQ94",
+    databaseURL: "https://memory-lane-e2697-default-rtdb.firebaseio.com" 
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getDatabase(app);
+
+  const journey = document.getElementById('journey');
+  const stopsContainer = document.getElementById('stopsContainer');
+  let svg, path, pathShadow, fox, addStopBtn, viewBox, io;
+
+  function queryRefs(){
+    svg = journey.querySelector('.trail-svg');
+    path = document.getElementById('trailPath');
+    pathShadow = document.getElementById('trailPathShadow');
+    fox = document.getElementById('fox');
+    addStopBtn = document.getElementById('addStopBtn');
+    viewBox = svg.viewBox.baseVal;
+    addStopBtn.addEventListener('click', createNewStopInFirebase);
+  }
+
+  const themes = [
+    ['The Trailhead', "Where it all began — boots laced, backpacks on, and the whole trip still ahead of us."],
+    ['Misty Overlook', "We stopped here longer than planned — the fog rolled in right as we reached the ridge."],
+    ['River Crossing', "Cold water, wobbly rocks, and somebody's shoe floated away for about ten very stressful seconds."],
+    ['Sunflower Fields', "An unplanned detour through a field that shouldn't have been on the map, but we're glad it was."],
+    ['Basecamp Summit', "The last climb, the best view, and the photo that became everyone's phone background afterward."]
+  ];
+
+  function renumberStopsDOM(){
+    const allStops = stopsContainer.querySelectorAll('.stop');
+    allStops.forEach((el, i)=>{
+      const numEl = el.querySelector('.stop-number');
+      if(numEl){ numEl.textContent = 'Stop ' + (allStops.length - i); }
+    });
+  }
+
+  // --- FIREBASE WRITE: Add New Stop ---
+  function createNewStopInFirebase() {
+    const totalStops = stopsContainer.querySelectorAll('.stop').length;
+    const stopId = "stop_" + Date.now();
+    const defaultTheme = themes[totalStops % themes.length];
+
+    const newStopData = {
+      id: stopId,
+      timestamp: Date.now(),
+      title: defaultTheme[0],
+      description: defaultTheme[1],
+      photos: [
+        { index: 0, driveId: "", caption: "Add a photo" },
+        { index: 1, driveId: "", caption: "Add a photo" },
+        { index: 2, driveId: "", caption: "Add a photo" },
+        { index: 3, driveId: "", caption: "Add a photo" }
+      ]
+    };
+
+    set(ref(db, 'trail_stops/' + stopId), newStopData);
+  }
+
+  // --- FIREBASE READ: Sync & Render dynamically ---
+  onValue(ref(db, 'trail_stops'), (snapshot) => {
+    stopsContainer.innerHTML = "";
+    
+    if (!snapshot.exists()) {
+      const fallbackD = "M500,0 C 500,100 500,100 500,100";
+      path.setAttribute('d', fallbackD);
+      pathShadow.setAttribute('d', fallbackD);
+      svg.setAttribute('viewBox', "0 0 1000 200");
+      updateFox();
+      return;
+    }
+
+    const data = snapshot.val();
+    const sortedStops = Object.values(data).sort((a, b) => a.timestamp - b.timestamp);
+
+    let calculatedPath = "M500,0";
+    const segmentSpanY = 600;
+
+    sortedStops.forEach((stop, index) => {
+      // Dynamic Layout Assignment: even elements go left, odd go right
+      const currentSide = (index % 2 === 0) ? 'left' : 'right';
+      
+      const currentY = index * segmentSpanY;
+      const targetY = (index + 1) * segmentSpanY;
+      const targetX = currentSide === 'right' ? 800 : 200;
+
+      calculatedPath += ` C ${targetX},${currentY + 60} ${targetX},${currentY + 180} ${targetX},${currentY + 300}`;
+      calculatedPath += ` C ${targetX},${currentY + 420} 500,${currentY + 540} 500,${targetY}`;
+
+      const section = document.createElement('section');
+      section.className = `stop stop-${currentSide}`;
+      section.dataset.id = stop.id;
+
+      let photoGridHtml = "";
+      stop.photos.forEach(p => {
+        if (p.driveId) {
+          photoGridHtml += `
+            <div class="photo photo-real" data-index="${p.index}">
+              <img src="https://drive.google.com/thumbnail?id=${p.driveId}&sz=w1000" alt="Trip photo">
+              <span class="photo-cap" contenteditable="true">${p.caption}</span>
+            </div>`;
+        } else {
+          photoGridHtml += `
+            <div class="photo" data-index="${p.index}">
+              <span class="photo-icon">📷</span>
+              <span class="photo-cap" contenteditable="true">${p.caption}</span>
+            </div>`;
+        }
+      });
+
+      section.innerHTML = `
+        <div class="stop-card">
+          <div class="stop-header-row">
+            <div class="stop-number">Stop</div>
+            <button class="delete-stop-btn" title="Delete this stop">🗑️</button>
+          </div>
+          <h2 contenteditable="true" class="editable-title">${stop.title}</h2>
+          <p contenteditable="true" class="editable-desc">${stop.description}</p>
+          <div class="photo-grid">${photoGridHtml}</div>
+        </div>`;
+
+      stopsContainer.insertBefore(section, stopsContainer.firstChild);
+      io.observe(section);
+      setTimeout(() => section.classList.add('visible'), 50);
+    });
+
+    path.setAttribute('d', calculatedPath);
+    pathShadow.setAttribute('d', calculatedPath);
+    
+    const totalCalculatedHeight = sortedStops.length * segmentSpanY;
+    svg.setAttribute('viewBox', `0 0 1000 ${totalCalculatedHeight}`);
+
+    renumberStopsDOM();
+    updateFox();
+  });
+
+  // --- FIREBASE UPDATE: Text Blurs & Content Editing ---
+  stopsContainer.addEventListener('blur', function(e) {
+    const stopEl = e.target.closest('.stop');
+    if (!stopEl) return;
+    const stopId = stopEl.dataset.id;
+
+    if (e.target.classList.contains('editable-title')) {
+      update(ref(db, `trail_stops/${stopId}`), { title: e.target.textContent });
+    } else if (e.target.classList.contains('editable-desc')) {
+      update(ref(db, `trail_stops/${stopId}`), { description: e.target.textContent });
+    } else if (e.target.classList.contains('photo-cap')) {
+      const photoEl = e.target.closest('.photo');
+      const photoIndex = photoEl.dataset.index;
+      update(ref(db, `trail_stops/${stopId}/photos/${photoIndex}`), { caption: e.target.textContent });
+    }
+  }, true);
+
+  // --- FIREBASE UPDATE: Drive IDs Photo Clicks & Deletion handling ---
+  stopsContainer.addEventListener('click', function(e){
+    if (e.target.classList.contains('delete-stop-btn')) {
+      const stopEl = e.target.closest('.stop');
+      if (!stopEl) return;
+      const stopId = stopEl.dataset.id;
+      const stopTitle = stopEl.querySelector('.editable-title').textContent;
+
+      if (window.confirm(`Are you sure you want to delete "${stopTitle || 'this stop'}" from the trail?`)) {
+        remove(ref(db, `trail_stops/${stopId}`));
+      }
+      return;
+    }
+
+    const photoEl = e.target.closest('.photo');
+    if (!photoEl || e.target.isContentEditable) return;
+
+    const stopEl = photoEl.closest('.stop');
+    const stopId = stopEl.dataset.id;
+    const photoIndex = photoEl.dataset.index;
+
+    const currentId = photoEl.classList.contains('photo-real') ? "replace" : "new";
+    const promptMsg = currentId === "new" 
+      ? 'Paste the Google Drive file ID for this photo:' 
+      : 'Replace this photo — paste a new Google Drive file ID (leave blank to keep):';
+
+    const id = window.prompt(promptMsg);
+    if (id === null) return; 
+    if (id.trim() === "" && currentId === "new") return;
+
+    if (id.trim() !== "") {
+      update(ref(db, `trail_stops/${stopId}/photos/${photoIndex}`), { driveId: id.trim() });
+    }
+  });
+
+  function updateFox(){
+    const rect = journey.getBoundingClientRect();
+    const scrollTop = window.scrollY || window.pageYOffset;
+    const journeyTop = scrollTop + rect.top;
+    const journeyHeight = journey.offsetHeight;
+    const viewportMid = scrollTop + window.innerHeight * 0.45;
+
+    let t = (viewportMid - journeyTop) / journeyHeight;
+    t = Math.max(0, Math.min(1, t));
+
+    const totalLength = path.getTotalLength();
+    const point = path.getPointAtLength(t * totalLength);
+    const pointAhead = path.getPointAtLength(Math.min(totalLength, t * totalLength + 4));
+
+    const scaleX = svg.clientWidth / viewBox.width;
+    const scaleY = svg.clientHeight / viewBox.height;
+
+    fox.style.left = (point.x * scaleX) + 'px';
+    fox.style.top = (point.y * scaleY) + 'px';
+
+    const angle = Math.atan2((pointAhead.y - point.y) * scaleY, (pointAhead.x - point.x) * scaleX) * 180 / Math.PI;
+    const flip = Math.cos(angle * Math.PI / 180) < 0 ? -1 : 1;
+    fox.querySelector('.bounce').style.transform = `translateY(0) scaleX(${flip})`;
+  }
+
+  let ticking = false;
+  function onScroll(){
+    if(!ticking){
+      requestAnimationFrame(()=>{ updateFox(); ticking = false; });
+      ticking = true;
+    }
+  }
+
+  queryRefs();
+
+  io = new IntersectionObserver((entries)=>{
+    entries.forEach(e=>{
+      if(e.isIntersecting){ e.target.classList.add('visible'); }
+    });
+  }, {threshold:0.3});
+
+  window.addEventListener('scroll', onScroll, {passive:true});
+  window.addEventListener('resize', onScroll);
+  window.addEventListener('load', updateFox);
+  updateFox();
+</script>
+
+</body>
+</html>
+
+```
