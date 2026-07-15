@@ -553,12 +553,13 @@ Here is the fully corrected, updated file:
   }
 
   queryRefs();
-
+// dummy
   io = new IntersectionObserver((entries)=>{
     entries.forEach(e=>{
       if(e.isIntersecting){ e.target.classList.add('visible'); }
     });
   }, {threshold:0.3});
+
 
   window.addEventListener('scroll', onScroll, {passive:true});
   window.addEventListener('resize', onScroll);
