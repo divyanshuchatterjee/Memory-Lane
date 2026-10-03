@@ -1,10 +1,3 @@
-The issue happens because the `side` layout parameter (`left` or `right`) is saved as static data inside Firebase whenever a new stop is created. When a stop in the middle is deleted, the remaining items keep their original `side` properties, creating situations where two "left" or two "right" cards end up next to each other.
-
-To fix this, we should **decouple the side logic from Firebase**. Instead of saving `stop.side` to the database, we can determine the side dynamically in the frontend loop as the stops are rendered. This ensures that no matter how many sections you delete or insert, they will **always perfectly alternate**.
-
-Here is the fully corrected, updated file:
-
-```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -45,7 +38,80 @@ Here is the fully corrected, updated file:
     *{animation-duration:0.01ms !important; animation-iteration-count:1 !important; transition-duration:0.01ms !important;}
   }
 
-  /* ---------- Drifting clouds background ---------- */
+  /* ---------- Birthday Greeting Overlay ---------- */
+  .birthday-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(36, 49, 42, 0.45);
+    backdrop-filter: blur(4px);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.5s ease;
+    padding: 20px;
+  }
+  .birthday-overlay.active {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .birthday-card {
+    background: var(--cream);
+    border: 2px solid var(--coral);
+    border-radius: 28px;
+    padding: 3rem 2rem 2.5rem;
+    text-align: center;
+    max-width: 480px;
+    width: 100%;
+    box-shadow: 0 20px 40px -10px rgba(0,0,0,0.3);
+    transform: scale(0.85) translateY(30px);
+    transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .birthday-overlay.active .birthday-card {
+    transform: scale(1) translateY(0);
+  }
+  .birthday-card .eyebrow {
+    font-family: 'Caveat', cursive;
+    font-size: 2rem;
+    color: var(--trail-dark);
+    margin-bottom: 0.5rem;
+  }
+  .birthday-card h2 {
+    font-size: clamp(2.5rem, 6vw, 3.8rem);
+    color: var(--coral-dark);
+    line-height: 1.1;
+    margin-bottom: 1rem;
+    letter-spacing: -0.5px;
+  }
+  .birthday-card h2 span { color: var(--forest); }
+  .birthday-card p {
+    font-size: 1.1rem;
+    font-weight: 500;
+    line-height: 1.6;
+    color: #41564a;
+    margin: 0 0 2rem;
+  }
+  .birthday-close-btn {
+    font-family: 'Baloo 2', cursive;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #fff;
+    background: var(--forest);
+    border: none;
+    border-radius: 999px;
+    padding: 0.7rem 2.5rem;
+    cursor: pointer;
+    box-shadow: var(--paper-shadow);
+    transition: transform 0.2s ease, background 0.2s ease;
+  }
+  .birthday-close-btn:hover {
+    background: #1e3621;
+    transform: translateY(-2px);
+  }
+
+  /* ---------- Cloud Layer ---------- */
   .cloud-layer{
     position:fixed; inset:0; z-index:0; pointer-events:none; overflow:hidden;
   }
@@ -93,41 +159,31 @@ Here is the fully corrected, updated file:
     50%{transform:rotate(45deg) translateY(8px);}
   }
 
-  /* ---------- Journey wrapper ---------- */
+  /* ---------- Journey ---------- */
   .journey{
     position:relative; z-index:2;
     max-width:1100px; margin:0 auto;
-    padding:0 6vw 4vh;
+    padding:4vh 6vw;
   }
   .trail-svg{
     position:absolute; top:0; left:0; width:100%; height:100%;
     z-index:0; pointer-events:none;
   }
   #trailPath{
-    fill:none;
-    stroke:var(--trail);
-    stroke-width:14;
-    stroke-linecap:round;
-    stroke-dasharray:2 26;
+    fill:none; stroke:var(--trail); stroke-width:14; stroke-linecap:round; stroke-dasharray:2 26;
   }
   #trailPathShadow{
-    fill:none;
-    stroke:var(--trail-dark);
-    stroke-width:14;
-    stroke-linecap:round;
-    stroke-dasharray:2 26;
-    opacity:.35;
-    transform:translate(3px,5px);
+    fill:none; stroke:var(--trail-dark); stroke-width:14; stroke-linecap:round; stroke-dasharray:2 26; opacity:.35; transform:translate(3px,5px);
   }
 
   .fox{
     position:absolute; z-index:4; width:78px; height:70px;
-    left:0; top:0;
-    transform:translate(-42%,-62%);
+    left:0; top:0; transform:translate(-42%,-62%);
     will-change:left, top, transform;
+    transition: left 0.1s ease-out, top 0.1s ease-out;
   }
   .fox svg{width:100%; height:100%; overflow:visible;}
-  .fox .bounce{animation:foxbob .6s ease-in-out infinite;}
+  .fox .bounce{animation:foxbob .6s ease-in-out infinite; transition: transform 0.2s ease;}
   @keyframes foxbob{
     0%,100%{transform:translateY(0);}
     50%{transform:translateY(-5px);}
@@ -135,124 +191,128 @@ Here is the fully corrected, updated file:
 
   /* ---------- Stops ---------- */
   .stop{
-    position:relative; z-index:2;
-    min-height:78vh;
-    display:flex; align-items:center;
-    padding:6vh 0;
+    position:relative; z-index:2; min-height:78vh; display:flex; align-items:center; padding:6vh 0;
   }
   .stop-left{justify-content:flex-start;}
   .stop-right{justify-content:flex-end;}
 
   .stop-card{
-    position:relative;
-    width:min(46%, 460px);
-    background:var(--cream);
-    border-radius:22px;
-    padding:2rem 2rem 1.7rem;
-    box-shadow:var(--paper-shadow);
-    border:1px solid rgba(47,82,51,0.08);
-    opacity:0; transform:translateY(28px);
-    transition:opacity .7s ease, transform .7s ease;
+    position:relative; width:min(46%, 460px); background:var(--cream);
+    border-radius:22px; padding:2rem 2rem 1.7rem; box-shadow:var(--paper-shadow);
+    border:1px solid rgba(47,82,51,0.08); opacity:0; transform:translateY(28px);
+    transition:opacity .7s ease, transform .7s ease, box-shadow 0.25s ease;
+    cursor: pointer;
+  }
+  .stop-card:hover{
+    box-shadow: 0 18px 36px -10px rgba(36,49,42,0.45);
   }
   .stop.visible .stop-card{opacity:1; transform:translateY(0);}
 
-  .stop-header-row{
-    display:flex;
-    justify-content:space-between;
-    align-items:center;
-    margin-bottom:.15rem;
-  }
+  .stop-header-row{ display:flex; justify-content:space-between; align-items:center; margin-bottom:.15rem; }
+  .stop-number{ font-family:'Caveat',cursive; font-size:1.1rem; color:var(--leaf); font-weight:700; }
 
-  .stop-number{
-    font-family:'Caveat',cursive; font-size:1.1rem; color:var(--leaf); font-weight:700;
+  .delete-btn {
+    background: transparent; border: none; cursor: pointer; font-size: 1.1rem;
+    opacity: 0.5; transition: opacity 0.2s ease, transform 0.2s ease; padding: 2px 6px; border-radius: 6px;
   }
+  .delete-btn:hover { opacity: 1; transform: scale(1.15); background: rgba(217, 122, 69, 0.15); }
 
-  .delete-stop-btn{
-    background:none;
-    border:none;
-    font-size:0.9rem;
-    cursor:pointer;
-    opacity:0.4;
-    transition:opacity 0.2s ease, transform 0.2s ease;
-    padding:4px;
-  }
-  .delete-stop-btn:hover{
-    opacity:1;
-    transform:scale(1.15);
-  }
+  .editable-title, .editable-desc, .photo-cap { outline: none; border-radius: 6px; transition: background-color 0.2s ease, box-shadow 0.2s ease; }
+  .editable-title:focus, .editable-desc:focus { background-color: rgba(47, 82, 51, 0.05); box-shadow: 0 0 0 4px rgba(47, 82, 51, 0.05); }
+  .photo-cap:focus { background: white !important; color: var(--ink) !important; box-shadow: 0 0 0 3px rgba(0,0,0,0.1); }
 
   .stop-card h2{font-size:1.7rem; color:var(--forest); margin:0 0 .6rem;}
   .stop-card p{font-size:.98rem; line-height:1.55; color:#41564a; margin:0 0 1.1rem;}
 
-  .photo-grid{
-    display:grid; grid-template-columns:1fr 1fr; gap:.7rem;
-  }
+  .photo-grid{ display:grid; grid-template-columns:1fr 1fr; gap:.7rem; }
   .photo{
-    aspect-ratio:1/1; border-radius:10px; position:relative;
-    display:flex; align-items:flex-end; padding:.5rem;
-    background-size:cover; background-position:center;
-    box-shadow:0 6px 14px -6px rgba(36,49,42,.35);
-    transform:rotate(var(--r,0deg));
-    transition:transform .25s ease;
+    aspect-ratio:1/1; border-radius:10px; position:relative; display:flex; align-items:flex-end; padding:.5rem;
+    background-size:cover; background-position:center; box-shadow:0 6px 14px -6px rgba(36,49,42,.35);
+    transform:rotate(var(--r,0deg)); transition:transform .25s ease;
   }
   .photo:hover{transform:rotate(0deg) scale(1.04);}
   .photo:nth-child(1){--r:-3deg; background:linear-gradient(135deg,#F2C288,#F2935C);}
   .photo:nth-child(2){--r:2deg; background:linear-gradient(135deg,#9FD8B0,#5B9A5B);}
   .photo:nth-child(3){--r:2.5deg; background:linear-gradient(135deg,#A9D8E6,#6FB3CE);}
   .photo:nth-child(4){--r:-2deg; background:linear-gradient(135deg,#E7B7D8,#C77BAE);}
+  
   .photo-cap{
-    font-family:'Caveat',cursive; font-weight:600; font-size:.85rem; color:#fff;
-    background:rgba(0,0,0,.22); padding:2px 6px; border-radius:6px;
+    font-family:'Caveat',cursive; font-weight:600; font-size:.95rem; color:#fff;
+    background:rgba(0,0,0,.25); padding:2px 8px; border-radius:6px; width: 90%; max-width: 90%;
+    display: inline-block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  .photo-real{padding:0; overflow:hidden; background:#EFE6D0; aspect-ratio:auto; align-items:flex-end;}
-  .photo-real img{
-    width:100%; height:auto; display:block; border-radius:10px;
-  }
-  .photo-real .photo-cap{position:absolute; left:.5rem; bottom:.5rem;}
+  .photo-real{padding:0; overflow:hidden; background:#EFE6D0; aspect-ratio:1/1; align-items:flex-end;}
+  .photo-real img{ width:100%; height:100%; display:block; object-fit: cover; border-radius:10px; }
+  .photo-real .photo-cap{ position:absolute; left:5%; bottom:.5rem; background:rgba(0,0,0,0.4); }
 
-  .photo-icon{
-    position:absolute; top:.5rem; right:.5rem; font-size:1.1rem; opacity:.85;
+  .photo-icon{ position:absolute; top:30%; left:50%; transform:translate(-50%, -50%); font-size:1.4rem; opacity:.6; }
+
+  /* ---------- Photo Modal ---------- */
+  .photo-modal {
+    position: fixed; inset: 0; background: rgba(36, 49, 42, 0.75);
+    backdrop-filter: blur(6px); z-index: 1000; display: flex;
+    align-items: center; justify-content: center; opacity: 0;
+    pointer-events: none; transition: opacity 0.3s ease; padding: 20px;
+  }
+  .photo-modal.active { opacity: 1; pointer-events: auto; }
+  .photo-modal-content {
+    background: var(--cream); border: 2px solid var(--forest);
+    border-radius: 24px; padding: 2.5rem 2rem 2rem; max-width: 850px;
+    width: 100%; max-height: 85vh; overflow-y: auto; position: relative;
+    box-shadow: 0 20px 40px rgba(0,0,0,0.35); transform: scale(0.9);
+    transition: transform 0.3s ease;
+  }
+  .photo-modal.active .photo-modal-content { transform: scale(1); }
+  .photo-modal-close {
+    position: absolute; top: 1rem; right: 1.2rem; background: transparent;
+    border: none; font-size: 2rem; color: var(--forest); cursor: pointer;
+    line-height: 1; transition: transform 0.2s ease;
+  }
+  .photo-modal-close:hover { transform: scale(1.2); }
+  .modal-title {
+    font-family: 'Baloo 2', cursive; color: var(--forest);
+    margin-bottom: 1.5rem; font-size: 2rem; text-align: center;
+  }
+  .modal-photo-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1.2rem;
+  }
+  .modal-photo-card {
+    border-radius: 14px; overflow: hidden; background: #fff;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.1); display: flex; flex-direction: column;
+  }
+  .modal-photo-card img { width: 100%; height: 220px; object-fit: cover; display: block; }
+  .modal-photo-placeholder {
+    height: 220px; display: flex; align-items: center; justify-content: center;
+    font-size: 3rem; background: #efe6d0;
+  }
+  .modal-photo-caption {
+    padding: 0.6rem 0.8rem; font-family: 'Caveat', cursive;
+    font-size: 1.15rem; color: var(--ink); text-align: center;
   }
 
   /* ---------- Footer ---------- */
-  .journey-end{
-    position:relative; z-index:2; text-align:center; padding:8vh 6vw 10vh;
-  }
+  .journey-end{ position:relative; z-index:2; text-align:center; padding:8vh 6vw 10vh; }
   .journey-end h2{font-size:2.2rem; color:var(--forest);}
   .journey-end p{max-width:460px; margin:.8rem auto 0; color:#3d5041; font-weight:500;}
-
-  .add-stop-wrap{
-    position:relative; z-index:6;
-    display:flex; flex-direction:column; align-items:center; gap:.6rem;
-    padding:2vh 0 4vh; text-align:center;
-  }
-  .add-stop-wrap-top{
-    padding:0 0 5vh;
-  }
-  .add-stop-btn{
-    font-family:'Baloo 2',cursive; font-size:1.05rem; font-weight:600;
-    color:#fff; background:var(--coral);
-    border:none; border-radius:999px; padding:.85rem 1.7rem;
-    cursor:pointer; box-shadow:var(--paper-shadow);
-    transition:transform .2s ease, background .2s ease;
-  }
-  .add-stop-btn:hover{background:var(--coral-dark); transform:translateY(-2px);}
-  .add-stop-btn:active{transform:translateY(0);}
-
-  [contenteditable="true"]{outline:none; border-radius:6px;}
-  [contenteditable="true"]:hover{background:rgba(232,184,75,.18);}
-  [contenteditable="true"]:focus{background:rgba(232,184,75,.28); box-shadow:0 0 0 2px var(--trail-dark);}
-  .photo{cursor:pointer;}
-  .photo:hover{outline:2px dashed var(--trail-dark); outline-offset:2px;}
 
   @media (max-width:720px){
     .stop-left,.stop-right{justify-content:center;}
     .stop-card{width:88%;}
     .fox{width:58px; height:52px;}
+    .modal-photo-grid { grid-template-columns: 1fr; }
   }
 </style>
 </head>
 <body>
+
+<div class="birthday-overlay" id="birthdayOverlay">
+  <div class="birthday-card">
+    <div class="eyebrow">✨ A special milestone along the path ✨</div>
+    <h2>Happy <span>Birthday!</span> 🎂</h2>
+    <p>Thank you for being the wonderful person you are and I pray for your healthy life with lots of success chotuuuuu!!!!!!.</p>
+    <button class="birthday-close-btn" id="closeBirthdayBtn">Uhuuuuuuuu!!!!</button>
+  </div>
+</div>
 
 <div class="cloud-layer">
   <div class="cloud" style="top:8%; width:140px; height:70px; animation-duration:70s;">
@@ -261,23 +321,16 @@ Here is the fully corrected, updated file:
   <div class="cloud" style="top:22%; width:100px; height:50px; animation-duration:95s; animation-delay:-20s;">
     <svg viewBox="0 0 140 70"><ellipse cx="40" cy="45" rx="35" ry="22" fill="#fff"/><ellipse cx="80" cy="35" rx="42" ry="28" fill="#fff"/><ellipse cx="110" cy="48" rx="28" ry="18" fill="#fff"/></svg>
   </div>
-  <div class="cloud" style="top:4%; width:170px; height:85px; animation-duration:120s; animation-delay:-50s;">
-    <svg viewBox="0 0 140 70"><ellipse cx="40" cy="45" rx="35" ry="22" fill="#fff"/><ellipse cx="80" cy="35" rx="42" ry="28" fill="#fff"/><ellipse cx="110" cy="48" rx="28" ry="18" fill="#fff"/></svg>
-  </div>
 </div>
 
 <header class="hero">
   <div class="eyebrow">a little walk through memory lane</div>
   <h1>Follow the <span>Trail</span></h1>
-  <p>Scroll down to wander the path. A small fox will lead the way, and every so often you'll stumble on a resting spot filled with photos from the trip.</p>
+  <p>Scroll down to wander the path. 'Totu & Kutu' will lead the way, and every so often you'll stumble on a resting spot filled with photos from the trip.</p>
   <div class="scroll-cue">keep scrolling<div class="arrow"></div></div>
 </header>
 
 <main class="journey" id="journey">
-  <div class="add-stop-wrap add-stop-wrap-top">
-    <button id="addStopBtn" class="add-stop-btn" type="button">＋ Add another stop to the trail</button>
-  </div>
-
   <svg class="trail-svg" viewBox="0 0 1000 600" preserveAspectRatio="none">
     <path id="trailPathShadow" d="M500,0 C 500,300 500,300 500,300"/>
     <path id="trailPath" d="M500,0 C 500,300 500,300 500,300"/>
@@ -310,7 +363,6 @@ Here is the fully corrected, updated file:
     </div>
   </div>
 
-  <!-- STOPS WILL DYNAMICALLY INJECT HERE FROM FIREBASE -->
   <div id="stopsContainer"></div>
 </main>
 
@@ -319,10 +371,22 @@ Here is the fully corrected, updated file:
   <p>That's the whole walk — thanks for scrolling along.</p>
 </footer>
 
+<!-- Photo Popup Modal -->
+<div class="photo-modal" id="photoModal">
+  <div class="photo-modal-content">
+    <button class="photo-modal-close" id="closePhotoModalBtn">&times;</button>
+    <h3 id="photoModalTitle" class="modal-title">Stop Photos</h3>
+    <div class="modal-photo-grid" id="modalPhotoGrid"></div>
+  </div>
+</div>
+
 <!-- Firebase Modular SDKs -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-  import { getDatabase, ref, set, onValue, update, remove } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+  import { getDatabase, ref, onValue, update, get, remove } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+
+  // Google Drive Parent Folder ID
+  const PARENT_DRIVE_FOLDER_ID = "1UiDyC8HApgUNfPy2mKn82xVZXxZXp-sM";
 
   const firebaseConfig = {
     apiKey: "AIzaSyDaf7SJRlQZkSm_kgDff6hiQVRwtyrJ07c",
@@ -338,27 +402,33 @@ Here is the fully corrected, updated file:
   const app = initializeApp(firebaseConfig);
   const db = getDatabase(app);
 
-  const journey = document.getElementById('journey');
-  const stopsContainer = document.getElementById('stopsContainer');
-  let svg, path, pathShadow, fox, addStopBtn, viewBox, io;
+  let journey, stopsContainer, svg, path, pathShadow, fox, viewBox, io;
+  let stopsDataMap = {}; // Cache stops for modal popup view
 
-  function queryRefs(){
-    svg = journey.querySelector('.trail-svg');
-    path = document.getElementById('trailPath');
-    pathShadow = document.getElementById('trailPathShadow');
-    fox = document.getElementById('fox');
-    addStopBtn = document.getElementById('addStopBtn');
-    viewBox = svg.viewBox.baseVal;
-    addStopBtn.addEventListener('click', createNewStopInFirebase);
+  // Helper to parse dates formatted as "DD/Mon/YY" (e.g., "5/Aug/24")
+  function parseCustomFolderDate(stop) {
+    const nameStr = (stop.title || stop.name || '').trim();
+    const match = nameStr.match(/^(\d{1,2})[-\/]([A-Za-z]{3})[-\/](\d{2}|\d{4})$/);
+
+    if (match) {
+      const day = parseInt(match[1], 10);
+      const monthStr = match[2];
+      let year = parseInt(match[3], 10);
+
+      if (year < 100) { year += 2000; }
+
+      const months = {
+        jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+        jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11
+      };
+
+      const monthIndex = months[monthStr.toLowerCase()];
+      if (monthIndex !== undefined) {
+        return new Date(year, monthIndex, day).getTime();
+      }
+    }
+    return stop.timestamp || 0;
   }
-
-  const themes = [
-    ['The Trailhead', "Where it all began — boots laced, backpacks on, and the whole trip still ahead of us."],
-    ['Misty Overlook', "We stopped here longer than planned — the fog rolled in right as we reached the ridge."],
-    ['River Crossing', "Cold water, wobbly rocks, and somebody's shoe floated away for about ten very stressful seconds."],
-    ['Sunflower Fields', "An unplanned detour through a field that shouldn't have been on the map, but we're glad it was."],
-    ['Basecamp Summit', "The last climb, the best view, and the photo that became everyone's phone background afterward."]
-  ];
 
   function renumberStopsDOM(){
     const allStops = stopsContainer.querySelectorAll('.stop');
@@ -368,162 +438,12 @@ Here is the fully corrected, updated file:
     });
   }
 
-  // --- FIREBASE WRITE: Add New Stop ---
-  function createNewStopInFirebase() {
-    const totalStops = stopsContainer.querySelectorAll('.stop').length;
-    const stopId = "stop_" + Date.now();
-    const defaultTheme = themes[totalStops % themes.length];
-
-    const newStopData = {
-      id: stopId,
-      timestamp: Date.now(),
-      title: defaultTheme[0],
-      description: defaultTheme[1],
-      photos: [
-        { index: 0, driveId: "", caption: "Add a photo" },
-        { index: 1, driveId: "", caption: "Add a photo" },
-        { index: 2, driveId: "", caption: "Add a photo" },
-        { index: 3, driveId: "", caption: "Add a photo" }
-      ]
-    };
-
-    set(ref(db, 'trail_stops/' + stopId), newStopData);
-  }
-
-  // --- FIREBASE READ: Sync & Render dynamically ---
-  onValue(ref(db, 'trail_stops'), (snapshot) => {
-    stopsContainer.innerHTML = "";
-    
-    if (!snapshot.exists()) {
-      const fallbackD = "M500,0 C 500,100 500,100 500,100";
-      path.setAttribute('d', fallbackD);
-      pathShadow.setAttribute('d', fallbackD);
-      svg.setAttribute('viewBox', "0 0 1000 200");
-      updateFox();
-      return;
-    }
-
-    const data = snapshot.val();
-    const sortedStops = Object.values(data).sort((a, b) => a.timestamp - b.timestamp);
-
-    let calculatedPath = "M500,0";
-    const segmentSpanY = 600;
-
-    sortedStops.forEach((stop, index) => {
-      // Dynamic Layout Assignment: even elements go left, odd go right
-      const currentSide = (index % 2 === 0) ? 'left' : 'right';
-      
-      const currentY = index * segmentSpanY;
-      const targetY = (index + 1) * segmentSpanY;
-      const targetX = currentSide === 'right' ? 800 : 200;
-
-      calculatedPath += ` C ${targetX},${currentY + 60} ${targetX},${currentY + 180} ${targetX},${currentY + 300}`;
-      calculatedPath += ` C ${targetX},${currentY + 420} 500,${currentY + 540} 500,${targetY}`;
-
-      const section = document.createElement('section');
-      section.className = `stop stop-${currentSide}`;
-      section.dataset.id = stop.id;
-
-      let photoGridHtml = "";
-      stop.photos.forEach(p => {
-        if (p.driveId) {
-          photoGridHtml += `
-            <div class="photo photo-real" data-index="${p.index}">
-              <img src="https://drive.google.com/thumbnail?id=${p.driveId}&sz=w1000" alt="Trip photo">
-              <span class="photo-cap" contenteditable="true">${p.caption}</span>
-            </div>`;
-        } else {
-          photoGridHtml += `
-            <div class="photo" data-index="${p.index}">
-              <span class="photo-icon">📷</span>
-              <span class="photo-cap" contenteditable="true">${p.caption}</span>
-            </div>`;
-        }
-      });
-
-      section.innerHTML = `
-        <div class="stop-card">
-          <div class="stop-header-row">
-            <div class="stop-number">Stop</div>
-            <button class="delete-stop-btn" title="Delete this stop">🗑️</button>
-          </div>
-          <h2 contenteditable="true" class="editable-title">${stop.title}</h2>
-          <p contenteditable="true" class="editable-desc">${stop.description}</p>
-          <div class="photo-grid">${photoGridHtml}</div>
-        </div>`;
-
-      stopsContainer.insertBefore(section, stopsContainer.firstChild);
-      io.observe(section);
-      setTimeout(() => section.classList.add('visible'), 50);
-    });
-
-    path.setAttribute('d', calculatedPath);
-    pathShadow.setAttribute('d', calculatedPath);
-    
-    const totalCalculatedHeight = sortedStops.length * segmentSpanY;
-    svg.setAttribute('viewBox', `0 0 1000 ${totalCalculatedHeight}`);
-
-    renumberStopsDOM();
-    updateFox();
-  });
-
-  // --- FIREBASE UPDATE: Text Blurs & Content Editing ---
-  stopsContainer.addEventListener('blur', function(e) {
-    const stopEl = e.target.closest('.stop');
-    if (!stopEl) return;
-    const stopId = stopEl.dataset.id;
-
-    if (e.target.classList.contains('editable-title')) {
-      update(ref(db, `trail_stops/${stopId}`), { title: e.target.textContent });
-    } else if (e.target.classList.contains('editable-desc')) {
-      update(ref(db, `trail_stops/${stopId}`), { description: e.target.textContent });
-    } else if (e.target.classList.contains('photo-cap')) {
-      const photoEl = e.target.closest('.photo');
-      const photoIndex = photoEl.dataset.index;
-      update(ref(db, `trail_stops/${stopId}/photos/${photoIndex}`), { caption: e.target.textContent });
-    }
-  }, true);
-
-  // --- FIREBASE UPDATE: Drive IDs Photo Clicks & Deletion handling ---
-  stopsContainer.addEventListener('click', function(e){
-    if (e.target.classList.contains('delete-stop-btn')) {
-      const stopEl = e.target.closest('.stop');
-      if (!stopEl) return;
-      const stopId = stopEl.dataset.id;
-      const stopTitle = stopEl.querySelector('.editable-title').textContent;
-
-      if (window.confirm(`Are you sure you want to delete "${stopTitle || 'this stop'}" from the trail?`)) {
-        remove(ref(db, `trail_stops/${stopId}`));
-      }
-      return;
-    }
-
-    const photoEl = e.target.closest('.photo');
-    if (!photoEl || e.target.isContentEditable) return;
-
-    const stopEl = photoEl.closest('.stop');
-    const stopId = stopEl.dataset.id;
-    const photoIndex = photoEl.dataset.index;
-
-    const currentId = photoEl.classList.contains('photo-real') ? "replace" : "new";
-    const promptMsg = currentId === "new" 
-      ? 'Paste the Google Drive file ID for this photo:' 
-      : 'Replace this photo — paste a new Google Drive file ID (leave blank to keep):';
-
-    const id = window.prompt(promptMsg);
-    if (id === null) return; 
-    if (id.trim() === "" && currentId === "new") return;
-
-    if (id.trim() !== "") {
-      update(ref(db, `trail_stops/${stopId}/photos/${photoIndex}`), { driveId: id.trim() });
-    }
-  });
-
   function updateFox(){
+    if (!path || !fox) return;
     const rect = journey.getBoundingClientRect();
     const scrollTop = window.scrollY || window.pageYOffset;
     const journeyTop = scrollTop + rect.top;
-    const journeyHeight = journey.offsetHeight;
+    const journeyHeight = journey.offsetHeight || 1;
     const viewportMid = scrollTop + window.innerHeight * 0.45;
 
     let t = (viewportMid - journeyTop) / journeyHeight;
@@ -552,21 +472,209 @@ Here is the fully corrected, updated file:
     }
   }
 
-  queryRefs();
+  document.addEventListener('DOMContentLoaded', async () => {
+    const overlay = document.getElementById('birthdayOverlay');
+    const closeBtn = document.getElementById('closeBirthdayBtn');
+    
+    setTimeout(() => { overlay.classList.add('active'); }, 300);
+    closeBtn.addEventListener('click', () => { overlay.classList.remove('active'); });
 
-  io = new IntersectionObserver((entries)=>{
-    entries.forEach(e=>{
-      if(e.isIntersecting){ e.target.classList.add('visible'); }
+    journey = document.getElementById('journey');
+    stopsContainer = document.getElementById('stopsContainer');
+    svg = journey.querySelector('.trail-svg');
+    path = document.getElementById('trailPath');
+    pathShadow = document.getElementById('trailPathShadow');
+    fox = document.getElementById('fox');
+    viewBox = svg.viewBox.baseVal;
+
+    io = new IntersectionObserver((entries)=>{
+      entries.forEach(e=>{
+        if(e.isIntersecting){ e.target.classList.add('visible'); }
+      });
+    }, {threshold:0.3});
+
+    window.addEventListener('scroll', onScroll, {passive:true});
+    window.addEventListener('resize', onScroll);
+
+    // Read stops from Firebase only
+    onValue(ref(db, 'trail_stops'), (snapshot) => {
+      stopsContainer.innerHTML = "";
+      stopsDataMap = {};
+      
+      if (!snapshot.exists()) {
+        const fallbackD = "M500,0 C 500,100 500,100 500,100";
+        path.setAttribute('d', fallbackD);
+        pathShadow.setAttribute('d', fallbackD);
+        svg.setAttribute('viewBox', "0 0 1000 200");
+        updateFox();
+        return;
+      }
+
+      const data = snapshot.val();
+      
+      // Sort using custom date parsing (5/Aug/24)
+      const sortedStops = Object.values(data).sort((a, b) => parseCustomFolderDate(b) - parseCustomFolderDate(a));
+
+      let calculatedPath = "M500,0";
+      const segmentSpanY = 600;
+
+      sortedStops.forEach((stop, index) => {
+        stopsDataMap[stop.id] = stop;
+
+        const currentSide = (index % 2 === 0) ? 'left' : 'right';
+        const currentY = index * segmentSpanY;
+        const targetY = (index + 1) * segmentSpanY;
+        const targetX = currentSide === 'right' ? 800 : 200;
+
+        calculatedPath += ` C ${targetX},${currentY + 60} ${targetX},${currentY + 180} ${targetX},${currentY + 300}`;
+        calculatedPath += ` C ${targetX},${currentY + 420} 500,${currentY + 540} 500,${targetY}`;
+
+        const section = document.createElement('section');
+        section.className = `stop stop-${currentSide}`;
+        section.dataset.id = stop.id;
+
+        let photoGridHtml = "";
+        if(stop.photos) {
+          // Cards show only the first 4 preview photos to keep layout clean
+          stop.photos.slice(0, 4).forEach(p => {
+            if (p.driveId) {
+              photoGridHtml += `
+                <div class="photo photo-real" data-index="${p.index}">
+                  <img src="https://drive.google.com/thumbnail?id=${p.driveId}&sz=w1000" alt="Trip photo">
+                  <span class="photo-cap" contenteditable="true">${p.caption || ''}</span>
+                </div>`;
+            } else {
+              photoGridHtml += `
+                <div class="photo" data-index="${p.index}">
+                  <span class="photo-icon">📷</span>
+                  <span class="photo-cap" contenteditable="true">${p.caption || ''}</span>
+                </div>`;
+            }
+          });
+        }
+
+        section.innerHTML = `
+          <div class="stop-card">
+            <div class="stop-header-row">
+              <div class="stop-number">Stop</div>
+              <button class="delete-btn" title="Delete Stop">🗑️</button>
+            </div>
+            <h2 contenteditable="true" class="editable-title">${stop.title}</h2>
+            <p contenteditable="true" class="editable-desc">${stop.description || ''}</p>
+            <div class="photo-grid">${photoGridHtml}</div>
+          </div>`;
+
+        stopsContainer.appendChild(section);
+        io.observe(section);
+        setTimeout(() => section.classList.add('visible'), 50);
+      });
+
+      path.setAttribute('d', calculatedPath);
+      pathShadow.setAttribute('d', calculatedPath);
+      
+      const totalCalculatedHeight = sortedStops.length * segmentSpanY;
+      svg.setAttribute('viewBox', `0 0 1000 ${totalCalculatedHeight}`);
+
+      renumberStopsDOM();
+      setTimeout(updateFox, 50);
     });
-  }, {threshold:0.3});
+  });
 
-  window.addEventListener('scroll', onScroll, {passive:true});
-  window.addEventListener('resize', onScroll);
-  window.addEventListener('load', updateFox);
-  updateFox();
+  // --- SAVE TEXT EDITS TO FIREBASE ---
+  document.addEventListener('blur', function(e) {
+    if (!stopsContainer) return;
+    const stopEl = e.target.closest('.stop');
+    if (!stopEl) return;
+    const stopId = stopEl.dataset.id;
+
+    if (e.target.classList.contains('editable-title')) {
+      update(ref(db, `trail_stops/${stopId}`), { title: e.target.textContent })
+        .catch(err => console.error("Error updating title:", err));
+    } else if (e.target.classList.contains('editable-desc')) {
+      update(ref(db, `trail_stops/${stopId}`), { description: e.target.textContent })
+        .catch(err => console.error("Error updating description:", err));
+    } else if (e.target.classList.contains('photo-cap')) {
+      const photoEl = e.target.closest('.photo');
+      const photoIndex = photoEl.dataset.index;
+      update(ref(db, `trail_stops/${stopId}/photos/${photoIndex}`), { caption: e.target.textContent })
+        .catch(err => console.error("Error updating caption:", err));
+    }
+  }, true);
+
+  // --- OPEN PHOTO MODAL POPUP ON CARD CLICK ---
+  document.addEventListener('click', function(e) {
+    if (e.target.closest('.delete-btn') || e.target.isContentEditable) return;
+
+    const card = e.target.closest('.stop-card');
+    if (!card) return;
+
+    const stopEl = card.closest('.stop');
+    if (!stopEl) return;
+
+    const stopId = stopEl.dataset.id;
+    const stop = stopsDataMap[stopId];
+    if (!stop) return;
+
+    openPhotoModal(stop);
+  });
+
+  function openPhotoModal(stop) {
+    const modal = document.getElementById('photoModal');
+    const title = document.getElementById('photoModalTitle');
+    const grid = document.getElementById('modalPhotoGrid');
+
+    title.textContent = stop.title || "Stop Photos";
+    grid.innerHTML = "";
+
+    // Renders EVERY photo stored in stop.photos (all images from folder)
+    if (stop.photos && stop.photos.length > 0) {
+      stop.photos.forEach(p => {
+        const card = document.createElement('div');
+        card.className = 'modal-photo-card';
+
+        const imgSrc = p.driveId 
+          ? `https://drive.google.com/thumbnail?id=${p.driveId}&sz=w1000` 
+          : '';
+
+        card.innerHTML = `
+          ${p.driveId ? `<img src="${imgSrc}" alt="Trip Photo">` : `<div class="modal-photo-placeholder">📷</div>`}
+          <div class="modal-photo-caption">${p.caption || ''}</div>
+        `;
+        grid.appendChild(card);
+      });
+    } else {
+      grid.innerHTML = "<p style='text-align:center; grid-column: 1/-1;'>No photos found in this stop.</p>";
+    }
+
+    modal.classList.add('active');
+  }
+
+  // --- CLOSE MODAL HANDLERS ---
+  const modal = document.getElementById('photoModal');
+  const closeModalBtn = document.getElementById('closePhotoModalBtn');
+
+  closeModalBtn.addEventListener('click', () => { modal.classList.remove('active'); });
+  modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.remove('active'); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && modal.classList.contains('active')) modal.classList.remove('active'); });
+
+  // --- DELETE STOP ---
+  document.addEventListener('click', async function(e) {
+    const deleteBtn = e.target.closest('.delete-btn');
+    if (!deleteBtn) return;
+
+    const stopEl = deleteBtn.closest('.stop');
+    if (!stopEl) return;
+
+    const stopId = stopEl.dataset.id;
+
+    if (confirm("Are you sure you want to remove this stop from your trail?")) {
+      try {
+        await remove(ref(db, `trail_stops/${stopId}`));
+      } catch (err) {
+        console.error("Error deleting stop from Firebase:", err);
+      }
+    }
+  });
 </script>
-
 </body>
 </html>
-
-```
