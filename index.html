@@ -295,6 +295,45 @@
   .journey-end h2{font-size:2.2rem; color:var(--forest);}
   .journey-end p{max-width:460px; margin:.8rem auto 0; color:#3d5041; font-weight:500;}
 
+
+  /* ---------- Google Drive Sync ---------- */
+  .drive-sync-area{
+    margin-top:1.5rem;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:.45rem;
+  }
+  .drive-sync-btn{
+    font-family:'Baloo 2',cursive;
+    font-size:1rem;
+    font-weight:600;
+    color:#fff;
+    background:var(--forest);
+    border:none;
+    border-radius:999px;
+    padding:.65rem 1.5rem;
+    cursor:pointer;
+    box-shadow:var(--paper-shadow);
+    transition:transform .2s ease, background .2s ease, opacity .2s ease;
+  }
+  .drive-sync-btn:hover{
+    background:#1e3621;
+    transform:translateY(-2px);
+  }
+  .drive-sync-btn:disabled{
+    cursor:not-allowed;
+    opacity:.6;
+    transform:none;
+  }
+  .drive-sync-status{
+    min-height:1.3rem;
+    font-size:.85rem;
+    font-weight:600;
+    color:#41564a;
+    text-align:center;
+  }
+
   @media (max-width:720px){
     .stop-left,.stop-right{justify-content:center;}
     .stop-card{width:88%;}
@@ -326,8 +365,15 @@
 <header class="hero">
   <div class="eyebrow">a little walk through memory lane</div>
   <h1>Follow the <span>Trail</span></h1>
-  <p>Scroll down to wander the path. 'Totu & Kutu' will lead the way, and every so often you'll stumble on a resting spot filled with photos from the trip.</p>
+  <p>Scroll down to wander the path. A small fox will lead the way, and every so often you'll stumble on a resting spot filled with photos from the trip.</p>
   <div class="scroll-cue">keep scrolling<div class="arrow"></div></div>
+
+  <div class="drive-sync-area">
+    <button id="driveSyncBtn" class="drive-sync-btn" type="button">
+      🔄 Sync Google Drive
+    </button>
+    <div id="driveSyncStatus" class="drive-sync-status"></div>
+  </div>
 </header>
 
 <main class="journey" id="journey">
@@ -401,6 +447,63 @@
 
   const app = initializeApp(firebaseConfig);
   const db = getDatabase(app);
+
+  /* ============================================================
+     GOOGLE DRIVE → FIREBASE MANUAL SYNC
+     ============================================================ */
+
+  const DRIVE_SYNC_URL =
+    'https://script.google.com/macros/s/AKfycbxZ5HcLw8v7N5qhCBjw4Ar88XSb5kEWR6b0ZpOMQN0IKDBDlVrgYQ6uPqGe0TtQC1uWDg/exec';
+
+  async function manualDriveSync() {
+
+    const button = document.getElementById('driveSyncBtn');
+    const status = document.getElementById('driveSyncStatus');
+
+    if (!button || !status) return;
+
+    button.disabled = true;
+    button.textContent = '⏳ Syncing...';
+    status.textContent = 'Reading Google Drive...';
+
+    try {
+      const response = await fetch(
+        DRIVE_SYNC_URL + '?action=sync&_=' + Date.now()
+      );
+
+      if (!response.ok) {
+        throw new Error('HTTP ' + response.status);
+      }
+
+      const result = await response.json();
+
+      console.log('Manual Drive sync result:', result);
+
+      if (!result.success) {
+        throw new Error(result.error || 'Sync failed');
+      }
+
+      if (result.result && result.result.skipped) {
+        status.textContent = '⏳ Another sync is already running.';
+        return;
+      }
+
+      const syncResult = result.result || {};
+      const folders = syncResult.foldersChecked || 0;
+      const photos = syncResult.photosFound || 0;
+
+      status.textContent =
+        `✓ Synced ${folders} folders • ${photos} photos`;
+
+    } catch (error) {
+      console.error('Manual Drive sync failed:', error);
+      status.textContent = '❌ Sync failed. Check the console.';
+    } finally {
+      button.disabled = false;
+      button.textContent = '🔄 Sync Google Drive';
+    }
+  }
+
 
   let journey, stopsContainer, svg, path, pathShadow, fox, viewBox, io;
   let stopsDataMap = {}; // Cache stops for modal popup view
@@ -578,6 +681,14 @@
       renumberStopsDOM();
       setTimeout(updateFox, 50);
     });
+  });
+
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const syncButton = document.getElementById('driveSyncBtn');
+    if (syncButton) {
+      syncButton.addEventListener('click', manualDriveSync);
+    }
   });
 
   // --- SAVE TEXT EDITS TO FIREBASE ---
